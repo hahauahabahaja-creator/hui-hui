@@ -28,7 +28,8 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq unzip
+          # Yahan p7zip-full lagaya hai taaki compression error 99 na aaye
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
           pip install gdown
           if [ -f package.json ]; then npm install; fi
 
@@ -38,17 +39,16 @@ jobs:
           ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
           echo "⬇️ Downloading profile from secure Drive link..."
-          
-          # YAHAN FIX KIYA HAI: Naye gdown ke liye bina --id ke run hoga
           gdown $DRIVE_FILE_ID -O profile.zip
           
-          echo "📦 Extracting Profile..."
+          echo "📦 Extracting Profile with 7-Zip..."
+          # 7-Zip use kar rahe hain AES encryption bypass karne ke liye
           if [ -z "$ZIP_PASSWORD" ]; then
             echo "🔓 No password detected, extracting normally..."
-            unzip profile.zip -d /tmp/chrome_profile
+            7z x profile.zip -o/tmp/chrome_profile -y
           else
             echo "🔐 Password detected, extracting securely..."
-            unzip -P "$ZIP_PASSWORD" profile.zip -d /tmp/chrome_profile
+            7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
           fi
           echo "✅ Profile Ready!"
 
