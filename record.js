@@ -12,7 +12,8 @@ if (!meetUrl) {
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/chromium-browser',
         headless: false,
-        userDataDir: '/tmp/chrome_profile', // 🔥 Humari secure profile
+        // 🔥 Yahan folder path ekdum theek kar diya hai: /tmp/chrome_profile/meet_profile
+        userDataDir: '/tmp/chrome_profile/meet_profile', 
         defaultViewport: null, 
         args: [
             '--no-sandbox',
