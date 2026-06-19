@@ -28,7 +28,6 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          # Yahan p7zip-full lagaya hai taaki compression error 99 na aaye
           sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
           pip install gdown
           if [ -f package.json ]; then npm install; fi
@@ -42,7 +41,6 @@ jobs:
           gdown $DRIVE_FILE_ID -O profile.zip
           
           echo "📦 Extracting Profile with 7-Zip..."
-          # 7-Zip use kar rahe hain AES encryption bypass karne ke liye
           if [ -z "$ZIP_PASSWORD" ]; then
             echo "🔓 No password detected, extracting normally..."
             7z x profile.zip -o/tmp/chrome_profile -y
@@ -93,10 +91,13 @@ jobs:
             sleep 10
           done
 
-      - name: 📤 Upload Recorded Video
+      - name: 📤 Upload Recorded Video and Screenshots
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Meeting-Recording-Optimized
-          path: ./output.mp4
+          # YAHAN FIX KIYA HAI: Ab Video aur Photos dono zip hokar aayenge
+          path: |
+            ./output.mp4
+            ./*.png
           retention-days: 5
