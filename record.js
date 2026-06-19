@@ -8,27 +8,26 @@ if (!meetUrl) {
 }
 
 (async () => {
-    console.log("🚀 Starting Headless Browser...");
+    console.log("🚀 Starting Headless Browser with Secure Profile...");
     const browser = await puppeteer.launch({
-        executablePath: '/usr/bin/chromium-browser', // GitHub action se install hoga
-        headless: false, // Xvfb virtual screen ke liye false rakhna zaroori hai
+        executablePath: '/usr/bin/chromium-browser',
+        headless: false,
+        userDataDir: '/tmp/chrome_profile', // 🔥 Humari secure profile
         defaultViewport: null, 
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--window-size=1280,720',
             '--start-maximized',
-            '--use-fake-ui-for-media-stream', // Auto-allow mic/cam prompts
-            '--use-fake-device-for-media-stream', // No real mic/cam needed
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream',
             '--disable-infobars',
-            '--autoplay-policy=no-user-gesture-required' // Allow audio to play auto
+            '--autoplay-policy=no-user-gesture-required'
         ],
-        ignoreDefaultArgs: ['--mute-audio'] // Ensure audio is unmuted!
+        ignoreDefaultArgs: ['--mute-audio']
     });
 
     const page = await browser.newPage();
-    
-    // Auto-allow permissions
     const context = browser.defaultBrowserContext();
     await context.overridePermissions(meetUrl, ['microphone', 'camera', 'notifications']);
 
@@ -36,19 +35,33 @@ if (!meetUrl) {
     await page.goto(meetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
     try {
-        console.log("⏳ Waiting for page load to enter name...");
-        // Google Meet guest login ke liye "Name" input box ka wait karna
-        await page.waitForSelector('input[type="text"]', { timeout: 15000 });
-        await page.type('input[type="text"]', 'Recording Bot');
+        console.log("⏳ Checking if we need to click 'Join Now'...");
+        await page.waitForSelector('button', { timeout: 15000 });
         
-        // Enter daba kar "Ask to join" / "Join" kar dena
-        await page.keyboard.press('Enter');
-        console.log("✅ Name entered and join requested!");
+        const joined = await page.evaluate(() => {
+            let buttons = [...document.querySelectorAll('button')];
+            let joinBtn = buttons.find(b => 
+                b.innerText.includes('Join now') || 
+                b.innerText.includes('Ask to join')
+            );
+            
+            if (joinBtn) {
+                joinBtn.click();
+                return true;
+            }
+            return false;
+        });
+
+        if (joined) {
+            console.log("✅ Join button clicked successfully!");
+        } else {
+            console.log("⚠️ Could not find Join button, might be already inside the meeting.");
+        }
+        
     } catch (error) {
-        console.log("⚠️ No name input found (Might be already in meeting or different UI).");
+        console.log("⚠️ Error clicking Join button or UI changed.");
     }
 
-    console.log("🎥 Bot is sitting in the meeting. Waiting for FFmpeg to record...");
-    // Script ko infinite chalu rakhna jab tak GitHub Action usko band na kare
+    console.log("🎥 Bot is sitting in the meeting. Waiting for FFmpeg to finish recording...");
     await new Promise(() => {}); 
 })();
