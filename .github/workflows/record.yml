@@ -1,0 +1,80 @@
+name: Secure Cloud Meet Recorder
+
+on:
+  workflow_dispatch:
+    inputs:
+      meet_url:
+        description: 'Target Meeting URL'
+        required: true
+
+jobs:
+  Recording-Engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # 6 ghante ki max limit (GitHub ki taraf se)
+    
+    # Secure permissions
+    permissions:
+      contents: read
+      actions: read  # STOP_FLAG read karne ke liye
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Environment (Node.js/Python)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Agar Python script hai, toh ise setup-python kar lena
+
+      - name: 🛠️ Install Core Dependencies (Virtual Display & FFmpeg)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
+          npm install  # (Agar package.json hai toh)
+
+      - name: 🎥 Start Virtual Screen & Execute Recording
+        env:
+          MEET_URL: ${{ github.event.inputs.meet_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          # 1. Virtual Screen Setup (1080p)
+          Xvfb :99 -screen 0 1920x1080x24 &
+          export DISPLAY=:99
+          echo "✅ Virtual Display Started on :99"
+
+          # 2. Start Actual Recording Script in Background
+          # NOTE: Yahan 'record.js' ya 'record.py' tumhari asli script ka naam hona chahiye
+          node record.js "$MEET_URL" & 
+          SCRIPT_PID=$!
+          echo "✅ Recording script running in background (PID: $SCRIPT_PID)"
+
+          # 3. Live STOP_FLAG Tracker (Har 10 second mein check karega)
+          while true; do
+            # GitHub API se STOP_FLAG ki value nikalna
+            FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+              https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
+
+            if [ "$FLAG" == "1" ]; then
+              echo "🛑 STOP SIGNAL DETECTED! Stopping recording safely..."
+              kill -SIGINT $SCRIPT_PID  # Safely script ko band karna
+              wait $SCRIPT_PID 2>/dev/null
+              break
+            fi
+
+            # Check agar script apne aap crash/finish ho gayi ho
+            if ! kill -0 $SCRIPT_PID 2>/dev/null; then
+              echo "⚠️ Recording script stopped automatically."
+              break
+            fi
+
+            sleep 10
+          done
+
+      - name: 📤 Upload Recorded Video (Artifact)
+        uses: actions/upload-artifact@v4
+        if: always()  # Error aaye toh bhi video upload karega
+        with:
+          name: Meeting-Recording-Output
+          path: ./*.mp4  # Output video format
+          retention-days: 5  # GitHub par video 5 din tak safe rahegi
