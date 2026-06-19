@@ -28,27 +28,8 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
-          pip install gdown
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
           if [ -f package.json ]; then npm install; fi
-
-      - name: 🗂️ Download & Extract Google Profile Securely
-        env:
-          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
-          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
-        run: |
-          echo "⬇️ Downloading profile from secure Drive link..."
-          gdown $DRIVE_FILE_ID -O profile.zip
-          
-          echo "📦 Extracting Profile with 7-Zip..."
-          if [ -z "$ZIP_PASSWORD" ]; then
-            echo "🔓 No password detected, extracting normally..."
-            7z x profile.zip -o/tmp/chrome_profile -y
-          else
-            echo "🔐 Password detected, extracting securely..."
-            7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
-          fi
-          echo "✅ Profile Ready!"
 
       - name: 🎥 Start 720p Optimized Screen & Recording
         env:
@@ -122,28 +103,22 @@ jobs:
           chat_id_str = os.environ.get("CHAT_ID", "")
 
           if not api_id_str or not api_hash or not bot_token or not chat_id_str:
-              print("❌ ERROR: Tumhare GitHub Secrets mein kuch missing hai!")
-              print(f"API_ID: {bool(api_id_str)}, API_HASH: {bool(api_hash)}, BOT_TOKEN: {bool(bot_token)}, CHAT_ID: {bool(chat_id_str)}")
+              print("❌ ERROR: GitHub Secrets missing!")
               sys.exit(1)
 
-          api_id = int(api_id_str)
-          chat_id = int(chat_id_str)
-
-          app = Client("cloud_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+          app = Client("cloud_bot", api_id=int(api_id_str), api_hash=api_hash, bot_token=bot_token)
 
           with app:
               print("📤 Sending Screenshots to Telegram...")
               if os.path.exists("1_before_join.png"):
-                  app.send_photo(chat_id, photo="1_before_join.png", caption="📸 Before Join")
+                  app.send_photo(int(chat_id_str), photo="1_before_join.png", caption="📸 Before Join")
               if os.path.exists("2_after_join.png"):
-                  app.send_photo(chat_id, photo="2_after_join.png", caption="📸 After Join")
+                  app.send_photo(int(chat_id_str), photo="2_after_join.png", caption="📸 After Join")
               
-              print("🎥 Sending HD Video (Bypassing 50MB limit)...")
+              print("🎥 Sending HD Video...")
               if os.path.exists("output.mp4"):
-                  app.send_document(chat_id, document="output.mp4", caption="🎥 Tumhari HD Meeting Recording!")
-                  print("✅ Video Successfully Uploaded!")
-              else:
-                  print("⚠️ Video file missing.")
+                  app.send_document(int(chat_id_str), document="output.mp4", caption="🎥 HD Meeting Recording!")
+                  print("✅ Video Uploaded!")
           EOF
           
           python upload.py
