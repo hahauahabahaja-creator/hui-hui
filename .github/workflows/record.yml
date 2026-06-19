@@ -38,10 +38,11 @@ jobs:
           ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
           echo "⬇️ Downloading profile from secure Drive link..."
-          gdown --id $DRIVE_FILE_ID -O profile.zip
+          
+          # YAHAN FIX KIYA HAI: Naye gdown ke liye bina --id ke run hoga
+          gdown $DRIVE_FILE_ID -O profile.zip
           
           echo "📦 Extracting Profile..."
-          # Smart Extraction: Checks if password exists in Secrets
           if [ -z "$ZIP_PASSWORD" ]; then
             echo "🔓 No password detected, extracting normally..."
             unzip profile.zip -d /tmp/chrome_profile
