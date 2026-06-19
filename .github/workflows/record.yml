@@ -28,8 +28,27 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
+          pip install gdown
           if [ -f package.json ]; then npm install; fi
+
+      - name: 🗂️ Download & Extract Google Profile Securely
+        env:
+          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
+          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
+        run: |
+          echo "⬇️ Downloading profile from secure Drive link..."
+          gdown $DRIVE_FILE_ID -O profile.zip
+          
+          echo "📦 Extracting Profile with 7-Zip..."
+          if [ -z "$ZIP_PASSWORD" ]; then
+            echo "🔓 No password detected, extracting normally..."
+            7z x profile.zip -o/tmp/chrome_profile -y
+          else
+            echo "🔐 Password detected, extracting securely..."
+            7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
+          fi
+          echo "✅ Profile Ready!"
 
       - name: 🎥 Start 720p Optimized Screen & Recording
         env:
@@ -82,7 +101,7 @@ jobs:
             ./*.png
           retention-days: 5
 
-      - name: 🚀 Telegram VIP Uploader (2GB Limit Unlocked)
+      - name: 🚀 Telegram Smart Uploader (Anti-Crash System)
         if: always()
         env:
           API_ID: ${{ secrets.API_ID }}
@@ -90,35 +109,47 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          pip install pyrogram tgcrypto
+          pip install pyrogram tgcrypto requests
           
           cat << 'EOF' > upload.py
           import os
-          import sys
+          import requests
           from pyrogram import Client
 
-          api_id_str = os.environ.get("API_ID", "")
-          api_hash = os.environ.get("API_HASH", "")
           bot_token = os.environ.get("BOT_TOKEN", "")
           chat_id_str = os.environ.get("CHAT_ID", "")
+          api_id_str = os.environ.get("API_ID", "").strip()
+          api_hash = os.environ.get("API_HASH", "").strip()
 
-          if not api_id_str or not api_hash or not bot_token or not chat_id_str:
-              print("❌ ERROR: GitHub Secrets missing!")
-              sys.exit(1)
+          # 1. Photos hamesha bhejenge (Normal Bot API se, yeh kabhi fail nahi hota)
+          print("📤 Sending Screenshots via standard bot...")
+          for photo_fn, caption in [("1_before_join.png", "📸 Before Join"), ("2_after_join.png", "📸 After Join")]:
+              if os.path.exists(photo_fn):
+                  url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+                  with open(photo_fn, 'rb') as f:
+                      requests.post(url, data={'chat_id': chat_id_str, 'caption': caption}, files={'photo': f})
 
-          app = Client("cloud_bot", api_id=int(api_id_str), api_hash=api_hash, bot_token=bot_token)
-
-          with app:
-              print("📤 Sending Screenshots to Telegram...")
-              if os.path.exists("1_before_join.png"):
-                  app.send_photo(int(chat_id_str), photo="1_before_join.png", caption="📸 Before Join")
-              if os.path.exists("2_after_join.png"):
-                  app.send_photo(int(chat_id_str), photo="2_after_join.png", caption="📸 After Join")
-              
-              print("🎥 Sending HD Video...")
-              if os.path.exists("output.mp4"):
-                  app.send_document(int(chat_id_str), document="output.mp4", caption="🎥 HD Meeting Recording!")
-                  print("✅ Video Uploaded!")
+          # 2. Video bhejenge VIP raste se
+          if os.path.exists("output.mp4"):
+              try:
+                  print("🎥 Trying VIP Telegram Uploader for Video...")
+                  api_id = int(api_id_str)
+                  chat_id = int(chat_id_str)
+                  
+                  app = Client("cloud_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+                  with app:
+                      app.send_document(chat_id, document="output.mp4", caption="🎥 HD Meeting Recording!")
+                  print("✅ VIP Video Upload Success!")
+              except Exception as e:
+                  print(f"⚠️ VIP Upload failed due to: {e}")
+                  print("🚀 Falling back to Cloud Link because API_ID is invalid...")
+                  
+                  # Fallback: Agar API_ID galat nikla toh direct link banakar bhej dega
+                  res = requests.post('https://file.io', files={'file': open('output.mp4', 'rb')})
+                  download_url = res.json().get('link', 'Error generating link')
+                  
+                  msg = f"⚠️ VIP Upload Fail hua (Check your API_ID/HASH Secrets).\n🚀 But Video secure link se download kar lo: {download_url}"
+                  requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", data={'chat_id': chat_id_str, 'text': msg})
           EOF
           
           python upload.py
