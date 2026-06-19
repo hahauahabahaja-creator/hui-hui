@@ -10,9 +10,8 @@ on:
 jobs:
   Recording-Engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # Max limit 6 hours
+    timeout-minutes: 350
     
-    # Secure permissions for checking STOP_FLAG
     permissions:
       contents: read
       actions: read
@@ -29,69 +28,74 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
-          # Agar repo mein package.json hai, toh npm install chalega
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq unzip
+          pip install gdown
           if [ -f package.json ]; then npm install; fi
+
+      - name: 🗂️ Download & Extract Google Profile Securely
+        env:
+          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
+          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
+        run: |
+          echo "⬇️ Downloading profile from secure Drive link..."
+          gdown --id $DRIVE_FILE_ID -O profile.zip
+          
+          echo "📦 Extracting Profile..."
+          # Smart Extraction: Checks if password exists in Secrets
+          if [ -z "$ZIP_PASSWORD" ]; then
+            echo "🔓 No password detected, extracting normally..."
+            unzip profile.zip -d /tmp/chrome_profile
+          else
+            echo "🔐 Password detected, extracting securely..."
+            unzip -P "$ZIP_PASSWORD" profile.zip -d /tmp/chrome_profile
+          fi
+          echo "✅ Profile Ready!"
 
       - name: 🎥 Start 720p Optimized Screen & Recording
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
-          # YAHAN FIX KIYA HAI: Ab PAT_TOKEN use hoga jisse STOP signal turant pakad mein aayega!
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO_NAME: ${{ github.repository }}
         run: |
-          # 1. Start Virtual Display (1280x720 for 150MB target size)
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
           echo "✅ Virtual Display Started on :99 (720p)"
 
-          # 2. Start Meeting Joiner Script (Background)
-          # Note: record.js tumhari meeting join karne wali asli script honi chahiye
           node record.js "$MEET_URL" & 
           MEET_PID=$!
           echo "✅ Meeting Script Running (PID: $MEET_PID)"
 
-          # 3. Start CPU-Safe, Size-Optimized FFmpeg Recording
-          # Resolution 720p, 24 FPS, CRF 26 -> 30 Min = ~150 MB
-          # Preset ultrafast -> GitHub CPU ban se bachane ke liye (Zero Load)
           ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
                  -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p \
                  output.mp4 > /dev/null 2>&1 &
           FFMPEG_PID=$!
           echo "🎥 Optimized Recording Started safely (PID: $FFMPEG_PID)"
 
-          # 4. Live STOP_FLAG Tracker (Har 10 sec check)
           while true; do
             FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
 
             if [ "$FLAG" == "1" ]; then
               echo "🛑 STOP SIGNAL DETECTED! Stopping smoothly..."
-              
-              # Pehle FFmpeg ko izzat se band karo taaki video corrupt na ho
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
-              
-              # Phir meeting wali script ko band karo
               kill -SIGINT $MEET_PID 2>/dev/null
               break
             fi
 
-            # Agar meeting script khud finish ho jaye
             if ! kill -0 $MEET_PID 2>/dev/null; then
               echo "⚠️ Meeting script stopped automatically. Saving video..."
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
               break
             fi
-
             sleep 10
           done
 
-      - name: 📤 Upload Recorded Video (Artifact)
+      - name: 📤 Upload Recorded Video
         uses: actions/upload-artifact@v4
-        if: always()  # Chahe error aaye ya successful ho, video save hogi
+        if: always()
         with:
           name: Meeting-Recording-Optimized
           path: ./output.mp4
-          retention-days: 5  # 5 din tak storage mein rahegi
+          retention-days: 5
