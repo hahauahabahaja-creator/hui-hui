@@ -36,7 +36,8 @@ jobs:
       - name: 🎥 Start 720p Optimized Screen & Recording
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # YAHAN FIX KIYA HAI: Ab PAT_TOKEN use hoga jisse STOP signal turant pakad mein aayega!
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO_NAME: ${{ github.repository }}
         run: |
           # 1. Start Virtual Display (1280x720 for 150MB target size)
