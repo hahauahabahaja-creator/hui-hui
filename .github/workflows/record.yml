@@ -10,61 +10,77 @@ on:
 jobs:
   Recording-Engine:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # 6 ghante ki max limit (GitHub ki taraf se)
+    timeout-minutes: 350  # Max limit 6 hours
     
-    # Secure permissions
+    # Secure permissions for checking STOP_FLAG
     permissions:
       contents: read
-      actions: read  # STOP_FLAG read karne ke liye
+      actions: read
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Environment (Node.js/Python)
+      - name: ⚙️ Setup Node.js Environment
         uses: actions/setup-node@v4
         with:
-          node-version: '20' # Agar Python script hai, toh ise setup-python kar lena
+          node-version: '20'
 
-      - name: 🛠️ Install Core Dependencies (Virtual Display & FFmpeg)
+      - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg chromium-browser jq
-          npm install  # (Agar package.json hai toh)
+          # Agar repo mein package.json hai, toh npm install chalega
+          if [ -f package.json ]; then npm install; fi
 
-      - name: 🎥 Start Virtual Screen & Execute Recording
+      - name: 🎥 Start 720p Optimized Screen & Recording
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO_NAME: ${{ github.repository }}
         run: |
-          # 1. Virtual Screen Setup (1080p)
-          Xvfb :99 -screen 0 1920x1080x24 &
+          # 1. Start Virtual Display (1280x720 for 150MB target size)
+          Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
-          echo "✅ Virtual Display Started on :99"
+          echo "✅ Virtual Display Started on :99 (720p)"
 
-          # 2. Start Actual Recording Script in Background
-          # NOTE: Yahan 'record.js' ya 'record.py' tumhari asli script ka naam hona chahiye
+          # 2. Start Meeting Joiner Script (Background)
+          # Note: record.js tumhari meeting join karne wali asli script honi chahiye
           node record.js "$MEET_URL" & 
-          SCRIPT_PID=$!
-          echo "✅ Recording script running in background (PID: $SCRIPT_PID)"
+          MEET_PID=$!
+          echo "✅ Meeting Script Running (PID: $MEET_PID)"
 
-          # 3. Live STOP_FLAG Tracker (Har 10 second mein check karega)
+          # 3. Start CPU-Safe, Size-Optimized FFmpeg Recording
+          # Resolution 720p, 24 FPS, CRF 26 -> 30 Min = ~150 MB
+          # Preset ultrafast -> GitHub CPU ban se bachane ke liye (Zero Load)
+          ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
+                 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p \
+                 output.mp4 > /dev/null 2>&1 &
+          FFMPEG_PID=$!
+          echo "🎥 Optimized Recording Started safely (PID: $FFMPEG_PID)"
+
+          # 4. Live STOP_FLAG Tracker (Har 10 sec check)
           while true; do
-            # GitHub API se STOP_FLAG ki value nikalna
             FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
 
             if [ "$FLAG" == "1" ]; then
-              echo "🛑 STOP SIGNAL DETECTED! Stopping recording safely..."
-              kill -SIGINT $SCRIPT_PID  # Safely script ko band karna
-              wait $SCRIPT_PID 2>/dev/null
+              echo "🛑 STOP SIGNAL DETECTED! Stopping smoothly..."
+              
+              # Pehle FFmpeg ko izzat se band karo taaki video corrupt na ho
+              kill -SIGINT $FFMPEG_PID
+              wait $FFMPEG_PID 2>/dev/null
+              
+              # Phir meeting wali script ko band karo
+              kill -SIGINT $MEET_PID 2>/dev/null
               break
             fi
 
-            # Check agar script apne aap crash/finish ho gayi ho
-            if ! kill -0 $SCRIPT_PID 2>/dev/null; then
-              echo "⚠️ Recording script stopped automatically."
+            # Agar meeting script khud finish ho jaye
+            if ! kill -0 $MEET_PID 2>/dev/null; then
+              echo "⚠️ Meeting script stopped automatically. Saving video..."
+              kill -SIGINT $FFMPEG_PID
+              wait $FFMPEG_PID 2>/dev/null
               break
             fi
 
@@ -73,8 +89,8 @@ jobs:
 
       - name: 📤 Upload Recorded Video (Artifact)
         uses: actions/upload-artifact@v4
-        if: always()  # Error aaye toh bhi video upload karega
+        if: always()  # Chahe error aaye ya successful ho, video save hogi
         with:
-          name: Meeting-Recording-Output
-          path: ./*.mp4  # Output video format
-          retention-days: 5  # GitHub par video 5 din tak safe rahegi
+          name: Meeting-Recording-Optimized
+          path: ./output.mp4
+          retention-days: 5  # 5 din tak storage mein rahegi
