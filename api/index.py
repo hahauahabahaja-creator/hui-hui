@@ -13,12 +13,9 @@ ALLOWED_GROUP_ID = os.environ.get('ALLOWED_GROUP_ID')
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# Bot ki Memory
-IS_RECORDING = False
-
 @app.route('/')
 def keep_alive():
-    return "hui-hui Bot is alive and Smart!", 200
+    return "hui-hui Bot is alive and running!", 200
 
 def run_server():
     port = int(os.environ.get("PORT", 10000))
@@ -29,12 +26,7 @@ def is_authorized(message):
 
 @bot.message_handler(commands=['go'])
 def trigger_github(message):
-    global IS_RECORDING
     if not is_authorized(message): return
-    
-    if IS_RECORDING:
-        bot.reply_to(message, "⚠️ **Abe bhai! Pehle se ek recording chal rahi hai.** Nayi shuru karne se pehle pichli wali ko `/off` toh kar!")
-        return
         
     try:
         raw_input = message.text.split(" ", 1)[1].strip()
@@ -50,7 +42,6 @@ def trigger_github(message):
         res = requests.post(url, headers=headers, json={"ref": "main", "inputs": {"meet_url": meet_link}})
 
         if res.status_code == 204:
-            IS_RECORDING = True
             bot.reply_to(message, f"✅ **[DEPLOYED]** Recording started for:\n`{meet_link}`", parse_mode="Markdown")
         else:
             bot.reply_to(message, f"❌ **[ERROR]** Failed: `{res.text}`")
@@ -59,12 +50,7 @@ def trigger_github(message):
 
 @bot.message_handler(commands=['off'])
 def stop_gracefully(message):
-    global IS_RECORDING
     if not is_authorized(message): return
-    
-    if not IS_RECORDING:
-        bot.reply_to(message, "🤡 **Hawa mein teer mat chala!** Koi recording chal hi nahi rahi hai, pehle `/go` dabakar shuru toh kar.")
-        return
         
     bot.reply_to(message, "🛑 **[SYSTEM]** Sending stop signal...")
     headers = {"Accept": "application/vnd.github.v3+json", "Authorization": f"token {GITHUB_PAT}"}
@@ -72,7 +58,6 @@ def stop_gracefully(message):
     res = requests.patch(var_url, headers=headers, json={"name": "STOP_FLAG", "value": "1"})
 
     if res.status_code == 204:
-        IS_RECORDING = False
         bot.reply_to(message, "🛑 **[ACCEPTED]** Recording stopping safely. Video process ho rahi hai...", parse_mode="Markdown")
 
 if __name__ == "__main__":
