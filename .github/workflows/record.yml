@@ -91,13 +91,54 @@ jobs:
             sleep 10
           done
 
-      - name: 📤 Upload Recorded Video and Screenshots
+      - name: 📤 Upload Backup to GitHub Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Meeting-Recording-Optimized
-          # YAHAN FIX KIYA HAI: Ab Video aur Photos dono zip hokar aayenge
           path: |
             ./output.mp4
             ./*.png
           retention-days: 5
+
+      - name: 🚀 Telegram VIP Uploader (2GB Limit Unlocked)
+        if: always()
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # VIP upload ke liye Python library install kar rahe hain
+          pip install pyrogram tgcrypto
+          
+          # Python script directly yahi se bana kar run karenge
+          cat << 'EOF' > upload.py
+          import os
+          from pyrogram import Client
+
+          api_id = int(os.environ.get("API_ID"))
+          api_hash = os.environ.get("API_HASH")
+          bot_token = os.environ.get("BOT_TOKEN")
+          chat_id = int(os.environ.get("CHAT_ID"))
+
+          # VIP Client start
+          app = Client("cloud_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
+
+          with app:
+              print("📤 Sending Screenshots to Telegram...")
+              if os.path.exists("1_before_join.png"):
+                  app.send_photo(chat_id, photo="1_before_join.png", caption="📸 Before Join")
+              if os.path.exists("2_after_join.png"):
+                  app.send_photo(chat_id, photo="2_after_join.png", caption="📸 After Join")
+              
+              print("🎥 Sending HD Video (Bypassing 50MB limit)...")
+              if os.path.exists("output.mp4"):
+                  app.send_document(chat_id, document="output.mp4", caption="🎥 Tumhari HD Meeting Recording!")
+                  print("✅ Video Successfully Uploaded!")
+              else:
+                  print("⚠️ Video file missing.")
+          EOF
+          
+          # Script chalao aur aish karo
+          python upload.py
