@@ -109,20 +109,26 @@ jobs:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # VIP upload ke liye Python library install kar rahe hain
           pip install pyrogram tgcrypto
           
-          # Python script directly yahi se bana kar run karenge
           cat << 'EOF' > upload.py
           import os
+          import sys
           from pyrogram import Client
 
-          api_id = int(os.environ.get("API_ID"))
-          api_hash = os.environ.get("API_HASH")
-          bot_token = os.environ.get("BOT_TOKEN")
-          chat_id = int(os.environ.get("CHAT_ID"))
+          api_id_str = os.environ.get("API_ID", "")
+          api_hash = os.environ.get("API_HASH", "")
+          bot_token = os.environ.get("BOT_TOKEN", "")
+          chat_id_str = os.environ.get("CHAT_ID", "")
 
-          # VIP Client start
+          if not api_id_str or not api_hash or not bot_token or not chat_id_str:
+              print("❌ ERROR: Tumhare GitHub Secrets mein kuch missing hai!")
+              print(f"API_ID: {bool(api_id_str)}, API_HASH: {bool(api_hash)}, BOT_TOKEN: {bool(bot_token)}, CHAT_ID: {bool(chat_id_str)}")
+              sys.exit(1)
+
+          api_id = int(api_id_str)
+          chat_id = int(chat_id_str)
+
           app = Client("cloud_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
           with app:
@@ -140,5 +146,4 @@ jobs:
                   print("⚠️ Video file missing.")
           EOF
           
-          # Script chalao aur aish karo
           python upload.py
