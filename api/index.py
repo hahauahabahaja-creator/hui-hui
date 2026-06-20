@@ -8,13 +8,17 @@ from flask import Flask
 # ==========================================
 # ⚙️ SECRETS & CONFIGURATION
 # ==========================================
-# Render Dashboard se yeh variables uthayega
+# Render Dashboard se environment variables uthayega
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") 
 GITHUB_TOKEN = os.environ.get("PAT_TOKEN")
-REPO_NAME = "hahauahabahaja-creator/hui-hui" # Teri GitHub Repo
-WORKFLOW_NAME = "record.yml" # Teri Action file ka naam
+# FIX: Ab yeh aapke Render variables se GITHUB_REPO fetch karega
+REPO_NAME = os.environ.get("GITHUB_REPO") 
+WORKFLOW_NAME = "record.yml" # Action file ka naam
 
-# Bot aur Server Initialize kar rahe hain
+# Sanity Check: Agar koi variable miss ho gaya Render me toh logs me bata dega
+if not all([BOT_TOKEN, GITHUB_TOKEN, REPO_NAME]):
+    print("⚠️ WARNING: Kuch Environment Variables gayab hain Render se!")
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
@@ -25,10 +29,13 @@ def update_github_variable(var_name, value):
     url = f"https://api.github.com/repos/{REPO_NAME}/actions/variables/{var_name}"
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json"
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28" # FIX: Added API version for stability
     }
-    # Variable ko update (PATCH) kar rahe hain
     res = requests.patch(url, json={"name": var_name, "value": str(value)}, headers=headers)
+    
+    if res.status_code != 204:
+        print(f"❌ Error updating {var_name}: {res.text}")
     return res.status_code == 204
 
 # ==========================================
@@ -48,7 +55,6 @@ def send_welcome(message):
 @bot.message_handler(commands=['go'])
 def start_recording(message):
     try:
-        # Link nikal rahe hain user ke message se
         meet_url = message.text.split()[1]
     except IndexError:
         bot.reply_to(message, "⚠️ Bhai link bhi toh de! Example: `/go https://meet.google.com/xyz`")
@@ -56,12 +62,12 @@ def start_recording(message):
 
     bot.reply_to(message, f"🚀 GitHub Engine start kar raha hu for:\n{meet_url}\n\nThoda wait karo, VIP entry le raha hu!")
     
-    # Purane flags ko Reset kar rahe hain (Taaki galti se turant band na ho)
+    # Purane flags ko reset karna zaroori hai
     update_github_variable("STOP_FLAG", "0")
     update_github_variable("VIEW_FLAG", "0")
     update_github_variable("FULL_FLAG", "0")
 
-    # GitHub Action (record.yml) ko trigger mar rahe hain
+    # GitHub Action trigger karna
     url = f"https://api.github.com/repos/{REPO_NAME}/actions/workflows/{WORKFLOW_NAME}/dispatches"
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -80,7 +86,7 @@ def start_recording(message):
 
 @bot.message_handler(commands=['off'])
 def stop_recording(message):
-    bot.reply_to(message, "🛑 Stop command bhej diya! Recording save ho rahi hai, auto-split hokar jaldi group me aayegi...")
+    bot.reply_to(message, "🛑 Stop command bhej diya! Recording save ho rahi hai, thodi der me upload hogi...")
     update_github_variable("STOP_FLAG", "1")
 
 @bot.message_handler(commands=['vew'])
@@ -98,10 +104,9 @@ def full_screen(message):
 # ==========================================
 @app.route('/')
 def index():
-    return "Bot is alive and running!"
+    return "✅ Bot is alive and running! Server is Awake."
 
 def run_bot():
-    # Anti-Crash Loop: Agar Telegram se connection toote toh wapas jud jaye
     while True:
         try:
             print("Starting Telegram Polling...")
@@ -111,9 +116,6 @@ def run_bot():
             time.sleep(5)
 
 if __name__ == "__main__":
-    # Bot ko background thread mein chala rahe hain
     threading.Thread(target=run_bot, daemon=True).start()
-    
-    # Flask Server main thread mein chalega
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
