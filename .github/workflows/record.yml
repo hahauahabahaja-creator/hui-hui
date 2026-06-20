@@ -14,7 +14,7 @@ jobs:
     
     permissions:
       contents: read
-      actions: read
+      actions: write
 
     steps:
       - name: 📥 Checkout Repository
@@ -29,7 +29,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
-          pip install gdown
+          pip install gdown requests
           if [ -f package.json ]; then npm install; fi
 
       - name: 🗂️ Download & Extract Google Profile Securely
@@ -37,20 +37,17 @@ jobs:
           DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
           ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
-          echo "⬇️ Downloading profile from secure Drive link..."
+          echo "⬇️ Downloading profile..."
           gdown $DRIVE_FILE_ID -O profile.zip
           
-          echo "📦 Extracting Profile with 7-Zip..."
           if [ -z "$ZIP_PASSWORD" ]; then
-            echo "🔓 No password detected, extracting normally..."
             7z x profile.zip -o/tmp/chrome_profile -y
           else
-            echo "🔐 Password detected, extracting securely..."
             7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
           fi
           echo "✅ Profile Ready!"
 
-      - name: 🎥 Start 720p Optimized Screen & Recording
+      - name: 🎥 Start Optimized HD Recording (CPU Safe)
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -58,24 +55,21 @@ jobs:
         run: |
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
-          echo "✅ Virtual Display Started on :99 (720p)"
-
+          
           node record.js "$MEET_URL" & 
           MEET_PID=$!
-          echo "✅ Meeting Script Running (PID: $MEET_PID)"
-
+          
+          # 🔥 CPU Safe FFmpeg: Threads 2, Ultrafast, CRF 28 (Good HD Quality, Low Size)
           ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
-                 -c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p \
+                 -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -threads 2 \
                  output.mp4 > /dev/null 2>&1 &
           FFMPEG_PID=$!
-          echo "🎥 Optimized Recording Started safely (PID: $FFMPEG_PID)"
 
           while true; do
             FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
               https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
 
             if [ "$FLAG" == "1" ]; then
-              echo "🛑 STOP SIGNAL DETECTED! Stopping smoothly..."
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
               kill -SIGINT $MEET_PID 2>/dev/null
@@ -83,7 +77,6 @@ jobs:
             fi
 
             if ! kill -0 $MEET_PID 2>/dev/null; then
-              echo "⚠️ Meeting script stopped automatically. Saving video..."
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
               break
@@ -91,65 +84,64 @@ jobs:
             sleep 10
           done
 
-      - name: 📤 Upload Backup to GitHub Artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: Meeting-Recording-Optimized
-          path: |
-            ./output.mp4
-            ./*.png
-          retention-days: 5
-
-      - name: 🚀 Telegram Smart Uploader (Anti-Crash System)
+      - name: 🚀 Telegram Smart Auto-Splitter (Private)
         if: always()
         env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          pip install pyrogram tgcrypto requests
-          
           cat << 'EOF' > upload.py
-          import os
-          import requests
-          from pyrogram import Client
+          import os, time, requests
+          from datetime import datetime
 
-          bot_token = os.environ.get("BOT_TOKEN", "")
-          chat_id_str = os.environ.get("CHAT_ID", "")
-          api_id_str = os.environ.get("API_ID", "").strip()
-          api_hash = os.environ.get("API_HASH", "").strip()
-
-          # 1. Photos hamesha bhejenge (Normal Bot API se, yeh kabhi fail nahi hota)
-          print("📤 Sending Screenshots via standard bot...")
-          for photo_fn, caption in [("1_before_join.png", "📸 Before Join"), ("2_after_join.png", "📸 After Join")]:
-              if os.path.exists(photo_fn):
-                  url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
-                  with open(photo_fn, 'rb') as f:
-                      requests.post(url, data={'chat_id': chat_id_str, 'caption': caption}, files={'photo': f})
-
-          # 2. Video bhejenge VIP raste se
-          if os.path.exists("output.mp4"):
-              try:
-                  print("🎥 Trying VIP Telegram Uploader for Video...")
-                  api_id = int(api_id_str)
-                  chat_id = int(chat_id_str)
-                  
-                  app = Client("cloud_bot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
-                  with app:
-                      app.send_document(chat_id, document="output.mp4", caption="🎥 HD Meeting Recording!")
-                  print("✅ VIP Video Upload Success!")
-              except Exception as e:
-                  print(f"⚠️ VIP Upload failed due to: {e}")
-                  print("🚀 Falling back to Cloud Link because API_ID is invalid...")
-                  
-                  # Fallback: Agar API_ID galat nikla toh direct link banakar bhej dega
-                  res = requests.post('https://file.io', files={'file': open('output.mp4', 'rb')})
-                  download_url = res.json().get('link', 'Error generating link')
-                  
-                  msg = f"⚠️ VIP Upload Fail hua (Check your API_ID/HASH Secrets).\n🚀 But Video secure link se download kar lo: {download_url}"
-                  requests.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", data={'chat_id': chat_id_str, 'text': msg})
-          EOF
+          bot_token = os.environ.get("BOT_TOKEN", "").strip()
+          chat_id = os.environ.get("CHAT_ID", "").replace("'", "").replace('"', "").strip()
           
+          # Date for caption
+          date_str = datetime.now().strftime("%d-%b-%Y")
+
+          print("📤 Sending Photos...")
+          for p, cap in [("1_before_join.png", f"📸 Before Join ({date_str})"), ("2_after_join.png", f"📸 After Join ({date_str})")]:
+              if os.path.exists(p):
+                  with open(p, 'rb') as f:
+                      requests.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data={'chat_id': chat_id, 'caption': cap}, files={'photo': f})
+
+          print("🎥 Processing Video...")
+          if os.path.exists("output.mp4"):
+              size_mb = os.path.getsize("output.mp4") / (1024 * 1024)
+              
+              if size_mb < 45:
+                  print("🚀 Sending Single Video...")
+                  cap = f"🎥 Meeting Recording ({date_str})\n🔹 Status: Complete"
+                  with open("output.mp4", 'rb') as f:
+                      requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
+              else:
+                  print("✂️ Splitting Video into safe parts...")
+                  # Har part approx 15-20 min ka hoga jisse 50MB cross na ho
+                  os.system('ffmpeg -i output.mp4 -c copy -map 0 -segment_time 1200 -f segment part_%03d.mp4')
+                  
+                  parts = sorted([f for f in os.listdir() if f.startswith('part_') and f.endswith('.mp4')])
+                  
+                  for i, part in enumerate(parts):
+                      cap = f"🎥 Meeting Recording ({date_str})\n🔹 Part: {i+1} of {len(parts)}"
+                      print(f"📤 Uploading Part {i+1}...")
+                      with open(part, 'rb') as f:
+                          requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
+                      time.sleep(3) # Anti-Spam delay
+          EOF
           python upload.py
+
+      - name: 🧹 SELF DESTRUCT (Auto-Delete Logs & Files)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          echo "🗑️ Deleting all local video and profile files..."
+          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile
+          
+          echo "🔥 Deleting GitHub Actions Run Logs permanently..."
+          curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" \
+               -H "Accept: application/vnd.github.v3+json" \
+               https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || echo "Log deletion triggered."
