@@ -25,63 +25,76 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 🛠️ Install Core Dependencies
+      - name: 🛠️ Install Core Dependencies & Audio Drivers
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full pulseaudio xdotool scrot
           pip install gdown requests
           if [ -f package.json ]; then npm install; fi
 
-      - name: 🗂️ Download & Extract Google Profile Securely (Password Zip)
+      - name: 🗂️ Extract Google Profile Securely (Password Zip)
         env:
           DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
           ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
-          echo "⬇️ Downloading profile from Drive..."
           gdown $DRIVE_FILE_ID -O profile.zip
-          
-          echo "📦 Extracting Password Protected Profile with 7-Zip..."
           7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
-          echo "✅ Profile Ready!"
 
-      - name: 🎥 Start Optimized HD Recording (CPU Safe)
+      - name: 🎥 Start Engine (HD Video + Audio + Live Polling)
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO_NAME: ${{ github.repository }}
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
+          # 1. Audio and Display Setup
+          pulseaudio -D --exit-idle-time=-1
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
           
+          # 2. Start Bot
           node record.js "$MEET_URL" & 
           MEET_PID=$!
           
-          # 🔥 CPU Safe FFmpeg: Threads 2, Ultrafast, CRF 28 (Anti-Ban, HD Quality)
+          # 3. 🔥 FFmpeg with Audio (pulse) & Video
           ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
-                 -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -threads 2 \
-                 output.mp4 > /dev/null 2>&1 &
+                 -f pulse -i default \
+                 -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p \
+                 -c:a aac -b:a 128k output.mp4 > /dev/null 2>&1 &
           FFMPEG_PID=$!
 
+          # 4. The Live Hacker Loop
           while true; do
-            FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-              https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
-
+            # Check Stop
+            FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
             if [ "$FLAG" == "1" ]; then
-              kill -SIGINT $FFMPEG_PID
-              wait $FFMPEG_PID 2>/dev/null
-              kill -SIGINT $MEET_PID 2>/dev/null
-              break
+              kill -SIGINT $FFMPEG_PID; wait $FFMPEG_PID 2>/dev/null; kill -SIGINT $MEET_PID 2>/dev/null; break
+            fi
+
+            # Check View (Live Screenshot)
+            VIEW=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG | jq -r .value)
+            if [ "$VIEW" == "1" ]; then
+              scrot /tmp/live.png
+              curl -s -F chat_id="$CHAT_ID" -F photo="@/tmp/live.png" -F caption="📸 Live Class Status!" "https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto"
+              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG -d '{"name":"VIEW_FLAG","value":"0"}'
+            fi
+
+            # Check Fullscreen
+            FULL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG | jq -r .value)
+            if [ "$FULL" == "1" ]; then
+              xdotool key f
+              curl -s -d chat_id="$CHAT_ID" -d text="📺 Full Screen Mode ON!" "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
+              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG -d '{"name":"FULL_FLAG","value":"0"}'
             fi
 
             if ! kill -0 $MEET_PID 2>/dev/null; then
-              kill -SIGINT $FFMPEG_PID
-              wait $FFMPEG_PID 2>/dev/null
-              break
+              kill -SIGINT $FFMPEG_PID; wait $FFMPEG_PID 2>/dev/null; break
             fi
-            sleep 10
+            sleep 5
           done
 
-      - name: 🚀 Telegram Smart Auto-Splitter (Private Safe)
+      - name: 🚀 Telegram Smart Auto-Splitter
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -90,54 +103,33 @@ jobs:
           cat << 'EOF' > upload.py
           import os, time, requests
           from datetime import datetime
-
           bot_token = os.environ.get("BOT_TOKEN", "").strip()
           chat_id = os.environ.get("CHAT_ID", "").replace("'", "").replace('"', "").strip()
-          
           date_str = datetime.now().strftime("%d-%b-%Y")
 
-          print("📤 Sending Photos...")
-          for p, cap in [("1_before_join.png", f"📸 Before Join ({date_str})"), ("2_after_join.png", f"📸 After Join ({date_str})")]:
-              if os.path.exists(p):
-                  with open(p, 'rb') as f:
-                      requests.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data={'chat_id': chat_id, 'caption': cap}, files={'photo': f})
-
-          print("🎥 Processing Video...")
           if os.path.exists("output.mp4"):
               size_mb = os.path.getsize("output.mp4") / (1024 * 1024)
-              
               if size_mb < 45:
-                  print("🚀 Sending Single Video...")
-                  cap = f"🎥 Meeting Recording ({date_str})\n🔹 Status: Complete"
+                  cap = f"🎥 Recording ({date_str})\n🔹 Complete"
                   with open("output.mp4", 'rb') as f:
                       requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
               else:
-                  print("✂️ Splitting Video into safe parts...")
-                  # Har part 20 minute ka hoga taaki limit safe rahe
                   os.system('ffmpeg -i output.mp4 -c copy -map 0 -segment_time 1200 -f segment part_%03d.mp4')
-                  
                   parts = sorted([f for f in os.listdir() if f.startswith('part_') and f.endswith('.mp4')])
-                  
                   for i, part in enumerate(parts):
-                      cap = f"🎥 Meeting Recording ({date_str})\n🔹 Part: {i+1} of {len(parts)}"
-                      print(f"📤 Uploading Part {i+1}...")
+                      cap = f"🎥 Recording ({date_str})\n🔹 Part: {i+1}/{len(parts)}"
                       with open(part, 'rb') as f:
                           requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
-                      time.sleep(3) # Anti-Spam delay
+                      time.sleep(3)
           EOF
           python upload.py
 
-      - name: 🧹 SELF DESTRUCT (Auto-Delete Logs & Files)
+      - name: 🧹 SELF DESTRUCT (Wipe Data)
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          echo "🗑️ Deleting all local video and profile files..."
-          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile
-          
-          echo "🔥 Deleting GitHub Actions Run Logs permanently..."
-          curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" \
-               -H "Accept: application/vnd.github.v3+json" \
-               https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || echo "Log deletion triggered."
+          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile /tmp/live.png
+          curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || true
