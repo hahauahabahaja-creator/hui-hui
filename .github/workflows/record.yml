@@ -28,20 +28,20 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
           pip install gdown requests
           if [ -f package.json ]; then npm install; fi
 
-      - name: 🗂️ Download & Extract Google Profile Securely (.tar.gz)
+      - name: 🗂️ Download & Extract Google Profile Securely (Password Zip)
         env:
           DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
+          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
           echo "⬇️ Downloading profile from Drive..."
-          gdown $DRIVE_FILE_ID -O profile.tar.gz
+          gdown $DRIVE_FILE_ID -O profile.zip
           
-          echo "📦 Extracting Profile (.tar.gz)..."
-          mkdir -p /tmp/chrome_profile
-          tar -xzf profile.tar.gz -C /tmp/chrome_profile
+          echo "📦 Extracting Password Protected Profile with 7-Zip..."
+          7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
           echo "✅ Profile Ready!"
 
       - name: 🎥 Start Optimized HD Recording (CPU Safe)
@@ -135,7 +135,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           echo "🗑️ Deleting all local video and profile files..."
-          rm -rf output.mp4 *.png part_*.mp4 profile.tar.gz /tmp/chrome_profile
+          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile
           
           echo "🔥 Deleting GitHub Actions Run Logs permanently..."
           curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" \
