@@ -28,23 +28,20 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq
           pip install gdown requests
           if [ -f package.json ]; then npm install; fi
 
-      - name: 🗂️ Download & Extract Google Profile Securely
+      - name: 🗂️ Download & Extract Google Profile Securely (.tar.gz)
         env:
           DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
-          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
-          echo "⬇️ Downloading profile..."
-          gdown $DRIVE_FILE_ID -O profile.zip
+          echo "⬇️ Downloading profile from Drive..."
+          gdown $DRIVE_FILE_ID -O profile.tar.gz
           
-          if [ -z "$ZIP_PASSWORD" ]; then
-            7z x profile.zip -o/tmp/chrome_profile -y
-          else
-            7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
-          fi
+          echo "📦 Extracting Profile (.tar.gz)..."
+          mkdir -p /tmp/chrome_profile
+          tar -xzf profile.tar.gz -C /tmp/chrome_profile
           echo "✅ Profile Ready!"
 
       - name: 🎥 Start Optimized HD Recording (CPU Safe)
@@ -59,7 +56,7 @@ jobs:
           node record.js "$MEET_URL" & 
           MEET_PID=$!
           
-          # 🔥 CPU Safe FFmpeg: Threads 2, Ultrafast, CRF 28 (Good HD Quality, Low Size)
+          # 🔥 CPU Safe FFmpeg: Threads 2, Ultrafast, CRF 28 (Anti-Ban, HD Quality)
           ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
                  -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p -threads 2 \
                  output.mp4 > /dev/null 2>&1 &
@@ -84,7 +81,7 @@ jobs:
             sleep 10
           done
 
-      - name: 🚀 Telegram Smart Auto-Splitter (Private)
+      - name: 🚀 Telegram Smart Auto-Splitter (Private Safe)
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -97,7 +94,6 @@ jobs:
           bot_token = os.environ.get("BOT_TOKEN", "").strip()
           chat_id = os.environ.get("CHAT_ID", "").replace("'", "").replace('"', "").strip()
           
-          # Date for caption
           date_str = datetime.now().strftime("%d-%b-%Y")
 
           print("📤 Sending Photos...")
@@ -117,7 +113,7 @@ jobs:
                       requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
               else:
                   print("✂️ Splitting Video into safe parts...")
-                  # Har part approx 15-20 min ka hoga jisse 50MB cross na ho
+                  # Har part 20 minute ka hoga taaki limit safe rahe
                   os.system('ffmpeg -i output.mp4 -c copy -map 0 -segment_time 1200 -f segment part_%03d.mp4')
                   
                   parts = sorted([f for f in os.listdir() if f.startswith('part_') and f.endswith('.mp4')])
@@ -139,7 +135,7 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           echo "🗑️ Deleting all local video and profile files..."
-          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile
+          rm -rf output.mp4 *.png part_*.mp4 profile.tar.gz /tmp/chrome_profile
           
           echo "🔥 Deleting GitHub Actions Run Logs permanently..."
           curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" \
