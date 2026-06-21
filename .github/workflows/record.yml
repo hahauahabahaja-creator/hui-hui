@@ -20,7 +20,7 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Node.js Environment
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -32,12 +32,14 @@ jobs:
           pip install gdown requests
           if [ -f package.json ]; then npm install; fi
 
-      - name: 🗂️ Extract Google Profile Securely
+      - name: 🗂️ Extract Google Profile Securely (Fast Mode)
         env:
           DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
           ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
         run: |
+          # Downloading zip
           gdown $DRIVE_FILE_ID -O profile.zip
+          # Extracting exactly into /tmp/chrome_profile
           7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
 
       - name: 🎥 Start Engine (HD Video + Audio + Live Polling)
@@ -52,15 +54,18 @@ jobs:
           Xvfb :99 -screen 0 1280x720x24 &
           export DISPLAY=:99
           
+          # Start advanced JS bot
           node record.js "$MEET_URL" & 
           MEET_PID=$!
           
+          # Supreme quality FFmpeg
           ffmpeg -y -f x11grab -video_size 1280x720 -framerate 24 -i :99 \
                  -f pulse -i default \
                  -c:v libx264 -preset ultrafast -crf 28 -pix_fmt yuv420p \
                  -c:a aac -b:a 128k output.mp4 > /dev/null 2>&1 &
           FFMPEG_PID=$!
 
+          # Command Listener Loop
           while true; do
             FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
             if [ "$FLAG" == "1" ]; then
@@ -103,7 +108,7 @@ jobs:
           if os.path.exists("output.mp4"):
               size_mb = os.path.getsize("output.mp4") / (1024 * 1024)
               if size_mb < 45:
-                  cap = f"🎥 Recording ({date_str})\n🔹 Complete"
+                  cap = f"🎥 Recording ({date_str})\n🔹 Complete File"
                   with open("output.mp4", 'rb') as f:
                       requests.post(f"https://api.telegram.org/bot{bot_token}/sendDocument", data={'chat_id': chat_id, 'caption': cap}, files={'document': f})
               else:
@@ -124,5 +129,5 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile /tmp/live.png
+          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile /tmp/live.png upload.py
           curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || true
