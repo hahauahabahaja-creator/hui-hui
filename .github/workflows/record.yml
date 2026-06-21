@@ -28,17 +28,9 @@ jobs:
       - name: 🛠️ Install Core Dependencies & Audio Drivers
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full pulseaudio xdotool scrot
-          pip install gdown requests
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq pulseaudio xdotool scrot
+          pip install requests
           if [ -f package.json ]; then npm install; fi
-
-      - name: 🗂️ Extract Google Profile Securely (Password Zip)
-        env:
-          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
-          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
-        run: |
-          gdown $DRIVE_FILE_ID -O profile.zip
-          7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
 
       - name: 🎥 Start Engine (HD Video + Audio + Live Polling)
         env:
@@ -131,5 +123,5 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile /tmp/live.png
+          rm -rf output.mp4 *.png part_*.mp4 /tmp/live.png
           curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || true
