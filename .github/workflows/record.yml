@@ -58,22 +58,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO_NAME: ${{ github.repository }}
         run: |
-          # Start audio
           pulseaudio -D --exit-idle-time=-1
-          
-          # Start display server
           Xvfb :99 -screen 0 1366x768x24 &
           export DISPLAY=:99
           
-          # Start Python bot
           python meet_bot.py &
           BOT_PID=$!
           echo "🤖 Bot started (PID: $BOT_PID)"
           
-          # Wait for bot to join
           sleep 30
           
-          # Start FFmpeg recording
           ffmpeg -y \
             -f x11grab \
             -video_size 1366x768 \
@@ -92,7 +86,6 @@ jobs:
           FFMPEG_PID=$!
           echo "🎥 FFmpeg started (PID: $FFMPEG_PID)"
           
-          # Monitoring loop - check if bot is alive
           while true; do
             if ! kill -0 $BOT_PID 2>/dev/null; then
               echo "⚠️ Bot stopped! Stopping recording..."
@@ -102,7 +95,6 @@ jobs:
             sleep 10
           done
           
-          # Wait for FFmpeg to finish
           wait $FFMPEG_PID 2>/dev/null
           echo "✅ Recording finished"
 
@@ -113,36 +105,36 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ -f "output.mp4" ]; then
-            python -c "
-        import os
-        import requests
-        import time
-        
-        bot_token = os.environ.get('BOT_TOKEN', '')
-        chat_id = os.environ.get('CHAT_ID', '')
-        
-        if not bot_token or not chat_id:
-            print('⚠️ No Telegram credentials')
-            exit(0)
-        
-        file_size = os.path.getsize('output.mp4') / (1024 * 1024)
-        print(f'📊 File size: {file_size:.1f} MB')
-        
-        # Send file
-        with open('output.mp4', 'rb') as f:
-            url = f'https://api.telegram.org/bot{bot_token}/sendDocument'
-            response = requests.post(
-                url,
-                data={'chat_id': chat_id},
-                files={'document': f},
-                timeout=300
-            )
-            
-        if response.status_code == 200:
-            print('✅ Upload complete!')
-        else:
-            print(f'❌ Upload failed: {response.text}')
-        "
+            echo "Uploading file..."
+            python3 -c "
+import os
+import requests
+import time
+
+bot_token = os.environ.get('BOT_TOKEN', '')
+chat_id = os.environ.get('CHAT_ID', '')
+
+if not bot_token or not chat_id:
+    print('⚠️ No Telegram credentials')
+    exit(0)
+
+file_size = os.path.getsize('output.mp4') / (1024 * 1024)
+print(f'📊 File size: {file_size:.1f} MB')
+
+with open('output.mp4', 'rb') as f:
+    url = f'https://api.telegram.org/bot{bot_token}/sendDocument'
+    response = requests.post(
+        url,
+        data={'chat_id': chat_id},
+        files={'document': f},
+        timeout=300
+    )
+
+if response.status_code == 200:
+    print('✅ Upload complete!')
+else:
+    print(f'❌ Upload failed: {response.text}')
+"
           else
             echo "⚠️ No output file found!"
           fi
@@ -158,7 +150,6 @@ jobs:
           rm -rf output.mp4 *.png *.log *.db chrome_profile
           echo "✅ Cleanup complete"
           
-          # Self-destruct workflow (optional)
           curl -X DELETE \
             -s \
             -H "Authorization: token $GITHUB_TOKEN" \
