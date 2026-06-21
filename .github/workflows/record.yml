@@ -27,10 +27,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      # 🔥 FIX: libasound2 ko libasound2t64 kar diya gaya hai
       - name: 🛠️ Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg pulseaudio jq scrot xdotool libgbm-dev libasound2 libxshmfence1 libnss3
+          sudo apt-get install -y xvfb ffmpeg pulseaudio jq scrot xdotool libgbm-dev libasound2t64 libxshmfence1 libnss3
 
       - name: 📦 Install Python Dependencies
         run: |
