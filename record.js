@@ -62,11 +62,19 @@ function log(message) {
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36');
 
+    // 🔥 FIX: First go to Google domain so cookies attach properly
+    log("🌐 Preparing Google domain for cookie injection...");
+    await page.goto('https://accounts.google.com', { waitUntil: 'networkidle2', timeout: 60000 });
+
     if (cookiesJson) {
         try {
             const cookies = JSON.parse(cookiesJson);
             await page.setCookie(...cookies);
-            log("✅ Cookies loaded successfully");
+            log("✅ Cookies injected into Google Domain");
+            
+            // 🔥 FIX: Reload page to verify login
+            await page.reload({ waitUntil: 'networkidle2' });
+            log("🔄 Account verification complete");
         } catch (error) {
             log("⚠️ Could not parse cookies: " + error.message);
         }
