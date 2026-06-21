@@ -1,174 +1,183 @@
-name: Secure Cloud Meet Recorder
+const puppeteer = require('puppeteer');
+const { exec } = require('child_process');
+const fs = require('fs');
 
-on:
-  workflow_dispatch:
-    inputs:
-      meet_url:
-        description: 'Target Meeting URL'
-        required: true
-        type: string
+let meetUrl = process.argv[2];
+const botToken = process.env.BOT_TOKEN;
+const chatId = process.env.CHAT_ID;
+const cookiesJson = process.env.GOOGLE_COOKIES; 
 
-jobs:
-  Recording-Engine:
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
+if (!meetUrl) process.exit(1);
+if (!meetUrl.startsWith('http://') && !meetUrl.startsWith('https://')) {
+    meetUrl = 'https://' + meetUrl;
+}
+
+function log(message) {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${message}`);
+    fs.appendFileSync('recording.log', `[${timestamp}] ${message}\n`);
+}
+
+(async () => {
+    log("🚀 Starting Supreme Engine (No Cam/Mic Mode)...");
     
-    permissions:
-      contents: read
-      actions: write
+    const browser = await puppeteer.launch({
+        executablePath: '/usr/bin/chromium-browser',
+        headless: false,
+        defaultViewport: null, 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--window-size=1366,768',
+            '--start-maximized', 
+            '--use-fake-ui-for-media-stream',
+            '--use-fake-device-for-media-stream', 
+            '--disable-infobars',
+            '--autoplay-policy=no-user-gesture-required', 
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--disable-software-rasterizer',
+            '--disable-extensions',
+            '--disable-default-apps',
+            '--mute-audio'
+        ],
+        ignoreDefaultArgs: ['--enable-automation', '--mute-audio'],
+        handleSIGINT: false
+    });
 
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    const context = browser.defaultBrowserContext();
 
-      - name: ⚙️ Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+    await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+        });
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5],
+        });
+        window.chrome = { runtime: {} };
+    });
 
-      - name: 🛠️ Install Core Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq pulseaudio xdotool scrot
-          pip install requests
-          if [ -f package.json ]; then npm install; fi
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36');
 
-      - name: 🎥 Start Engine (HQ Video Mode)
-        env:
-          MEET_URL: ${{ github.event.inputs.meet_url }}
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO_NAME: ${{ github.repository }}
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GOOGLE_COOKIES: ${{ secrets.GOOGLE_COOKIES }}
-        run: |
-          # Start audio
-          pulseaudio -D --exit-idle-time=-1
-          
-          # Start display server
-          Xvfb :99 -screen 0 1366x768x24 &
-          export DISPLAY=:99
-          
-          # Start recording
-          node record.js "$MEET_URL" & 
-          MEET_PID=$!
-          
-          # Enhanced video capture with timestamp
-          ffmpeg -y -f x11grab -video_size 1366x768 -framerate 30 -i :99 \
-                 -f pulse -i default \
-                 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p \
-                 -c:a aac -b:a 192k -movflags +faststart \
-                 -vf "drawtext=text='Recording %Y-%m-%d %H\:%M\:%S':x=10:y=10:fontcolor=white:fontsize=12:box=1:boxcolor=black@0.5" \
-                 output.mp4 > /dev/null 2>&1 &
-          FFMPEG_PID=$!
+    if (cookiesJson) {
+        try {
+            const cookies = JSON.parse(cookiesJson);
+            await page.setCookie(...cookies);
+            log("✅ Cookies loaded successfully");
+        } catch (error) {
+            log("⚠️ Could not parse cookies: " + error.message);
+        }
+    }
 
-          # Monitoring loop with enhanced features
-          while true; do
-            # Check stop flag
-            FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
-            if [ "$FLAG" == "1" ]; then
-              echo "🛑 Stop signal received, terminating..."
-              kill -SIGINT $FFMPEG_PID
-              wait $FFMPEG_PID 2>/dev/null
-              kill -SIGINT $MEET_PID 2>/dev/null
-              break
-            fi
+    try {
+        const meetOrigin = new URL(meetUrl).origin; 
+        await context.overridePermissions(meetOrigin, ['microphone', 'camera', 'notifications']);
+        log(`✅ Permissions overridden for ${meetOrigin}`);
+    } catch (err) {
+        log("⚠️ Permission override failed: " + err.message);
+    }
 
-            # View flag with enhanced screenshot
-            VIEW=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG | jq -r .value)
-            if [ "$VIEW" == "1" ]; then
-              echo "📸 Capturing screenshot..."
-              scrot /tmp/live.png
-              curl -s -F chat_id="$CHAT_ID" -F photo="@/tmp/live.png" -F caption="📸 **Live Class Status**\n⏰ $(date '+%H:%M:%S')" "https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto"
-              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG -d '{"name":"VIEW_FLAG","value":"0"}'
-            fi
+    log(`📡 Navigating to: ${meetUrl}`);
+    await page.goto(meetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+    await new Promise(r => setTimeout(r, 8000));
+    
+    log("🔇 Disabling Camera and Microphone...");
+    try {
+        await page.focus('body');
+        await page.keyboard.down('ControlLeft');
+        await page.keyboard.press('KeyE');
+        await page.keyboard.press('KeyD');
+        await page.keyboard.up('ControlLeft');
+        await new Promise(r => setTimeout(r, 3000));
+        log("✅ Media shortcuts executed");
+    } catch(e) {
+        log("⚠️ Could not toggle media shortcuts: " + e.message);
+    }
 
-            # Full screen toggle
-            FULL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG | jq -r .value)
-            if [ "$FULL" == "1" ]; then
-              echo "📺 Toggling full screen..."
-              xdotool key f
-              curl -s -d chat_id="$CHAT_ID" -d text="📺 **Display Update:** Full Screen Mode Activated!" "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage"
-              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG -d '{"name":"FULL_FLAG","value":"0"}'
-            fi
+    try {
+        await page.evaluate(() => {
+            const dismissBtns = [...document.querySelectorAll('button')]
+                .filter(b => {
+                    const text = b.innerText || '';
+                    return text.includes('Got it') || 
+                           text.includes('Dismiss') || 
+                           text.includes('Skip') || 
+                           text.includes('Not now');
+                });
+            dismissBtns.forEach(btn => btn.click());
+        });
+        log("✅ Popups dismissed");
+    } catch(e) {
+        log("⚠️ Popup dismissal failed: " + e.message);
+    }
 
-            # Check if meet process died
-            if ! kill -0 $MEET_PID 2>/dev/null; then
-              echo "⚠️ Meeting process died, stopping recording..."
-              kill -SIGINT $FFMPEG_PID
-              wait $FFMPEG_PID 2>/dev/null
-              break
-            fi
-            
-            sleep 5
-          done
+    await page.screenshot({ path: '1_before_join.png' });
+    log("📸 Before-join screenshot saved");
 
-      - name: 🚀 Smart Upload Handler
-        if: always()
-        env:
-          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          cat << 'EOF' > upload.py
-          import os
-          import time
-          import requests
-          from datetime import datetime
-          
-          bot_token = os.environ.get("BOT_TOKEN", "").strip()
-          chat_id = os.environ.get("CHAT_ID", "").replace("'", "").replace('"', "").strip()
-          date_str = datetime.now().strftime("%d-%b-%Y %H:%M")
+    try {
+        const nameInputSelector = 'input[type="text"], input[aria-label="Your name"], input[placeholder="Your name"]';
+        const nameInput = await page.$(nameInputSelector);
+        if (nameInput) {
+            const randomName = "Student " + Math.floor(Math.random() * 9999);
+            await page.type(nameInputSelector, randomName, { delay: 100 });
+            await new Promise(r => setTimeout(r, 1000));
+            log(`✅ Name entered: ${randomName}`);
+        }
+    } catch(e) {
+        log("⚠️ Name input failed: " + e.message);
+    }
 
-          if os.path.exists("output.mp4"):
-              size_mb = os.path.getsize("output.mp4") / (1024 * 1024)
-              print(f"📊 File size: {size_mb:.2f} MB")
-              
-              if size_mb < 45:
-                  cap = f"🎥 **Recording Complete**\n📅 {date_str}\n📊 Size: {size_mb:.1f} MB\n✅ Status: Ready"
-                  with open("output.mp4", 'rb') as f:
-                      response = requests.post(
-                          f"https://api.telegram.org/bot{bot_token}/sendDocument",
-                          data={'chat_id': chat_id, 'caption': cap, 'parse_mode': 'Markdown'},
-                          files={'document': f},
-                          timeout=120
-                      )
-                  print(f"✅ Upload complete: {response.status_code}")
-              else:
-                  print("📦 File large, splitting into parts...")
-                  os.system('ffmpeg -i output.mp4 -c copy -map 0 -segment_time 1200 -f segment part_%03d.mp4')
-                  parts = sorted([f for f in os.listdir() if f.startswith('part_') and f.endswith('.mp4')])
-                  print(f"📦 Split into {len(parts)} parts")
-                  
-                  for i, part in enumerate(parts):
-                      cap = f"🎥 **Recording Part {i+1}/{len(parts)}**\n📅 {date_str}"
-                      with open(part, 'rb') as f:
-                          requests.post(
-                              f"https://api.telegram.org/bot{bot_token}/sendDocument",
-                              data={'chat_id': chat_id, 'caption': cap, 'parse_mode': 'Markdown'},
-                              files={'document': f},
-                              timeout=120
-                          )
-                      time.sleep(3)
-          else:
-              print("⚠️ No output file found!")
-          EOF
-          
-          python upload.py
+    try {
+        const joined = await page.evaluate(() => {
+            const buttons = [...document.querySelectorAll('button')];
+            const joinBtn = buttons.find(b => {
+                const text = (b.innerText || '');
+                return text.includes('Join now') || 
+                       text.includes('Ask to join') ||
+                       text.includes('Continue');
+            });
+            if (joinBtn) { 
+                joinBtn.click(); 
+                return true; 
+            }
+            return false;
+        });
+        
+        if (joined) {
+            log("✅ Join button clicked");
+        } else {
+            log("⚠️ Could not find join button");
+        }
+    } catch (error) {
+        log("⚠️ Join click failed: " + error.message);
+    }
 
-      - name: 🧹 Cleanup & Self-Destruct
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          echo "🧹 Cleaning up files..."
-          rm -rf output.mp4 *.png part_*.mp4 /tmp/live.png upload.py recording.log
-          echo "✅ Cleanup complete"
-          
-          # Self-destruct workflow
-          curl -X DELETE \
-            -s \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || true
+    await new Promise(r => setTimeout(r, 15000)); 
+    await page.screenshot({ path: '2_after_join.png' });
+    log("✅ After-join screenshot saved");
+
+    if (botToken && chatId) {
+        const cmd = `curl -s -F chat_id="${chatId}" -F photo="@2_after_join.png" -F caption="✅ **Status:** Successfully connected to the meeting." "https://api.telegram.org/bot${botToken}/sendPhoto?parse_mode=Markdown"`;
+        exec(cmd, (error) => {
+            if (error) {
+                log("⚠️ Failed to send confirmation screenshot: " + error.message);
+            } else {
+                log("✅ Confirmation screenshot sent");
+            }
+        });
+    }
+
+    log("🔄 Recording engine active...");
+    await new Promise(() => {}); 
+})();
+
+process.on('uncaughtException', (error) => {
+    log("💥 Uncaught Exception: " + error.message);
+});
+
+process.on('unhandledRejection', (error) => {
+    log("💥 Unhandled Rejection: " + error.message);
+});
