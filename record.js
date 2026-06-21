@@ -16,7 +16,7 @@ if (!meetUrl) {
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/chromium-browser',
         headless: false,
-        userDataDir: '/tmp/chrome_profile/meet_profile', // Exact path matching your zip
+        userDataDir: '/tmp/chrome_profile/meet_profile', 
         defaultViewport: null, 
         args: [
             '--no-sandbox', 
@@ -28,7 +28,7 @@ if (!meetUrl) {
             '--disable-infobars',
             '--autoplay-policy=no-user-gesture-required', 
             '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled' // Anti-Ban
+            '--disable-blink-features=AutomationControlled' 
         ],
         ignoreDefaultArgs: ['--enable-automation', '--mute-audio'] 
     });
@@ -37,7 +37,7 @@ if (!meetUrl) {
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     const context = browser.defaultBrowserContext();
 
-    // 🛡️ ADVANCED: Super Stealth Footprint (Bypasses Google Workspace Blocks)
+    // 🛡️ Super Stealth Footprint
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36');
     await page.setExtraHTTPHeaders({
         'sec-ch-ua': '"Google Chrome";v="135", "Chromium";v="135", "Not?A_Brand";v="24"',
@@ -46,14 +46,21 @@ if (!meetUrl) {
         'Accept-Language': 'en-US,en;q=0.9'
     });
 
-    await context.overridePermissions(meetUrl, ['microphone', 'camera', 'notifications']);
+    // 🔥 FIX: Extract Base Origin to prevent "Opaque origins" Protocol Error
+    try {
+        const meetOrigin = new URL(meetUrl).origin; // Yeh 'https://meet.google.com' nikalega
+        await context.overridePermissions(meetOrigin, ['microphone', 'camera', 'notifications']);
+        console.log("✅ Permissions Granted Successfully!");
+    } catch (err) {
+        console.log("⚠️ Minor Permission Warning, moving on...", err.message);
+    }
 
     console.log(`🌐 Navigating to: ${meetUrl}`);
     await page.goto(meetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     
     await new Promise(r => setTimeout(r, 6000));
     
-    // 🛡️ ADVANCED: Auto-Dismiss any "Got it" or annoying popups before joining
+    // Auto-Dismiss any popups
     try {
         await page.evaluate(() => {
             let dismissBtns = [...document.querySelectorAll('button')].filter(b => b.innerText.includes('Got it') || b.innerText.includes('Dismiss'));
@@ -64,7 +71,7 @@ if (!meetUrl) {
     await page.screenshot({ path: '1_before_join.png' });
 
     try {
-        console.log("⏳ Clicking 'Join Now' / 'Ask to Join'...");
+        console.log("⏳ Clicking 'Join Now'...");
         const joined = await page.evaluate(() => {
             let buttons = [...document.querySelectorAll('button')];
             let joinBtn = buttons.find(b => 
@@ -76,7 +83,7 @@ if (!meetUrl) {
         });
         
         if (joined) console.log("✅ Join clicked successfully!");
-        else console.log("⚠️ Could not find Join button. Maybe already in?");
+        else console.log("⚠️ Could not find Join button.");
     } catch (error) { 
         console.log("⚠️ Error clicking Join button:", error); 
     }
