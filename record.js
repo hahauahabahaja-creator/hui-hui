@@ -11,12 +11,12 @@ if (!meetUrl) {
 }
 
 (async () => {
-    console.log("🚀 Starting Browser with Real Gmail Profile...");
+    console.log("🚀 Starting Advanced Stealth Browser with Real Profile...");
     
     const browser = await puppeteer.launch({
         executablePath: '/usr/bin/chromium-browser',
         headless: false,
-        userDataDir: '/tmp/chrome_profile/meet_profile', // 🔥 Using the real profile
+        userDataDir: '/tmp/chrome_profile/meet_profile', // Exact path matching your zip
         defaultViewport: null, 
         args: [
             '--no-sandbox', 
@@ -28,7 +28,7 @@ if (!meetUrl) {
             '--disable-infobars',
             '--autoplay-policy=no-user-gesture-required', 
             '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled'
+            '--disable-blink-features=AutomationControlled' // Anti-Ban
         ],
         ignoreDefaultArgs: ['--enable-automation', '--mute-audio'] 
     });
@@ -37,15 +37,30 @@ if (!meetUrl) {
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     const context = browser.defaultBrowserContext();
 
-    // Latest footprint taaki browser block na ho
+    // 🛡️ ADVANCED: Super Stealth Footprint (Bypasses Google Workspace Blocks)
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36');
+    await page.setExtraHTTPHeaders({
+        'sec-ch-ua': '"Google Chrome";v="135", "Chromium";v="135", "Not?A_Brand";v="24"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Accept-Language': 'en-US,en;q=0.9'
+    });
 
     await context.overridePermissions(meetUrl, ['microphone', 'camera', 'notifications']);
 
     console.log(`🌐 Navigating to: ${meetUrl}`);
     await page.goto(meetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
     
-    await new Promise(r => setTimeout(r, 8000));
+    await new Promise(r => setTimeout(r, 6000));
+    
+    // 🛡️ ADVANCED: Auto-Dismiss any "Got it" or annoying popups before joining
+    try {
+        await page.evaluate(() => {
+            let dismissBtns = [...document.querySelectorAll('button')].filter(b => b.innerText.includes('Got it') || b.innerText.includes('Dismiss'));
+            dismissBtns.forEach(btn => btn.click());
+        });
+    } catch(e) {}
+
     await page.screenshot({ path: '1_before_join.png' });
 
     try {
@@ -61,9 +76,9 @@ if (!meetUrl) {
         });
         
         if (joined) console.log("✅ Join clicked successfully!");
-        else console.log("⚠️ Could not find Join button.");
+        else console.log("⚠️ Could not find Join button. Maybe already in?");
     } catch (error) { 
-        console.log("⚠️ Error clicking Join button."); 
+        console.log("⚠️ Error clicking Join button:", error); 
     }
 
     await new Promise(r => setTimeout(r, 10000)); 
@@ -71,10 +86,10 @@ if (!meetUrl) {
     await page.screenshot({ path: '2_after_join.png' });
 
     if (botToken && chatId) {
-        let cmd = `curl -s -F chat_id="${chatId}" -F photo="@2_after_join.png" -F caption="✅ Bot Meeting me entry maar chuka hai (via Profile)!" "https://api.telegram.org/bot${botToken}/sendPhoto"`;
+        let cmd = `curl -s -F chat_id="${chatId}" -F photo="@2_after_join.png" -F caption="✅ VIP Entry Done! Bot is inside via Real Profile." "https://api.telegram.org/bot${botToken}/sendPhoto"`;
         exec(cmd, (err) => { if(!err) console.log("🚀 Live Photo Sent!"); });
     }
 
-    console.log("🎥 Bot is waiting in the meeting...");
+    console.log("🎥 Engine Locked. Awaiting commands...");
     await new Promise(() => {}); 
 })();
