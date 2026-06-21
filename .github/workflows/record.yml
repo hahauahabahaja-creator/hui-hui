@@ -28,27 +28,18 @@ jobs:
       - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg chromium-browser jq p7zip-full pulseaudio xdotool scrot
-          pip install gdown requests
+          sudo apt-get install -y xvfb ffmpeg chromium-browser jq pulseaudio xdotool scrot
+          pip install requests
           if [ -f package.json ]; then npm install; fi
 
-      - name: 🗂️ Extract Google Profile Securely (Fast Mode)
-        env:
-          DRIVE_FILE_ID: ${{ secrets.DRIVE_FILE_ID }}
-          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }}
-        run: |
-          # Downloading zip
-          gdown $DRIVE_FILE_ID -O profile.zip
-          # Extracting exactly into /tmp/chrome_profile
-          7z x profile.zip -p"$ZIP_PASSWORD" -o/tmp/chrome_profile -y
-
-      - name: 🎥 Start Engine (HD Video + Audio + Live Polling)
+      - name: 🎥 Start Engine (Cookie Injector + HD Video)
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           REPO_NAME: ${{ github.repository }}
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_COOKIES: ${{ secrets.GOOGLE_COOKIES }} # 🔥 Cookies passed to script here
         run: |
           pulseaudio -D --exit-idle-time=-1
           Xvfb :99 -screen 0 1280x720x24 &
@@ -129,5 +120,5 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
         run: |
-          rm -rf output.mp4 *.png part_*.mp4 profile.zip /tmp/chrome_profile /tmp/live.png upload.py
+          rm -rf output.mp4 *.png part_*.mp4 /tmp/live.png upload.py
           curl -X DELETE -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$RUN_ID || true
