@@ -1,4 +1,4 @@
-name: Ultimate Cloud Meet Recorder
+name: Secure Cloud Meet Recorder
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  Ultimate-Recording-Engine:
+  Recording-Engine:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     
@@ -21,53 +21,19 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔒 Setup VPN (Permanent Bypass)
-        run: |
-          sudo apt-get update
-          
-          # Install WireGuard
-          sudo apt-get install -y wireguard openresolv
-          
-          # Create VPN config
-          sudo bash -c 'cat > /etc/wireguard/wg0.conf << "EOF"
-          [Interface]
-          PrivateKey = YOUR_PRIVATE_KEY
-          Address = 10.0.0.2/24
-          DNS = 1.1.1.1, 8.8.8.8
-          
-          [Peer]
-          PublicKey = YOUR_PEER_KEY
-          Endpoint = YOUR_VPS_IP:51820
-          AllowedIPs = 0.0.0.0/0
-          PersistentKeepalive = 25
-          EOF'
-          
-          # Start VPN
-          sudo wg-quick up wg0
-          sleep 5
-          
-          # Verify IP changed
-          echo "Current IP:"
-          curl -s ifconfig.me
-
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 🛠️ Install ULTIMATE Dependencies
+      - name: 🛠️ Install Core Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg chromium-browser jq pulseaudio xdotool scrot
-          sudo apt-get install -y libgbm-dev libasound2 libxshmfence1 libnss3
-          
-          # Install npm packages
-          npm install
-          
-          # Install Python packages
-          pip install requests undetected-chromedriver selenium
+          pip install requests
+          if [ -f package.json ]; then npm install; fi
 
-      - name: 🎥 Start ULTIMATE Recording Engine
+      - name: 🎥 Start Recording Engine
         env:
           MEET_URL: ${{ github.event.inputs.meet_url }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -76,31 +42,23 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GOOGLE_COOKIES: ${{ secrets.GOOGLE_COOKIES }}
         run: |
-          # Start audio
           pulseaudio -D --exit-idle-time=-1
-          
-          # Start display
           Xvfb :99 -screen 0 1366x768x24 &
           export DISPLAY=:99
           
-          # Start recording
-          node record.js "$MEET_URL" &
+          node record.js "$MEET_URL" & 
           MEET_PID=$!
           
-          # Start FFmpeg with best quality
           ffmpeg -y -f x11grab -video_size 1366x768 -framerate 30 -i :99 \
                  -f pulse -i default \
-                 -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p \
+                 -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p \
                  -c:a aac -b:a 192k -movflags +faststart \
-                 -vf "drawtext=text='Recording %Y-%m-%d %H\:%M\:%S':x=10:y=10:fontcolor=white:fontsize=12:box=1:boxcolor=black@0.5" \
                  output.mp4 > /dev/null 2>&1 &
           FFMPEG_PID=$!
 
-          # Monitoring loop
           while true; do
             FLAG=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/STOP_FLAG | jq -r .value)
             if [ "$FLAG" == "1" ]; then
-              echo "🛑 Stopping..."
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
               kill -SIGINT $MEET_PID 2>/dev/null
@@ -109,7 +67,6 @@ jobs:
 
             VIEW=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG | jq -r .value)
             if [ "$VIEW" == "1" ]; then
-              echo "📸 Screenshot..."
               scrot /tmp/live.png
               curl -s -F chat_id="$CHAT_ID" -F photo="@/tmp/live.png" -F caption="📸 **Live Status**" "https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto"
               curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/VIEW_FLAG -d '{"name":"VIEW_FLAG","value":"0"}'
@@ -117,13 +74,11 @@ jobs:
 
             FULL=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG | jq -r .value)
             if [ "$FULL" == "1" ]; then
-              echo "📺 Full screen..."
               xdotool key f
               curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" https://api.github.com/repos/$REPO_NAME/actions/variables/FULL_FLAG -d '{"name":"FULL_FLAG","value":"0"}'
             fi
 
             if ! kill -0 $MEET_PID 2>/dev/null; then
-              echo "⚠️ Meeting died"
               kill -SIGINT $FFMPEG_PID
               wait $FFMPEG_PID 2>/dev/null
               break
@@ -132,7 +87,7 @@ jobs:
             sleep 5
           done
 
-      - name: 🚀 Smart Upload Handler
+      - name: 🚀 Upload Handler
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
