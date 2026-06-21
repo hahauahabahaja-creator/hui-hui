@@ -57,9 +57,7 @@ def run_meet_bot():
     send_telegram("🚀 **Bot Starting**\n📡 Target: " + MEET_URL)
     
     with sync_playwright() as p:
-        # ============================================
-        # STEP 1: Chrome Profile Setup (PERMANENT LOGIN)
-        # ============================================
+        # Chrome Profile Setup
         user_data_dir = "./chrome_profile"
         
         if not os.path.exists(user_data_dir):
@@ -68,9 +66,7 @@ def run_meet_bot():
         
         log("🔐 Using persistent Chrome profile...")
         
-        # ============================================
-        # STEP 2: Launch Browser
-        # ============================================
+        # Launch Browser
         context = p.chromium.launch_persistent_context(
             user_data_dir,
             headless=False,
@@ -90,9 +86,7 @@ def run_meet_bot():
         
         page = context.new_page()
         
-        # ============================================
-        # STEP 3: Navigate to Google First
-        # ============================================
+        # Navigate to Google First
         log("🌐 Going to Google...")
         page.goto('https://accounts.google.com', wait_until='networkidle')
         time.sleep(3)
@@ -111,16 +105,12 @@ def run_meet_bot():
             send_telegram("⚠️ **Manual Login Required!**\nPlease login to Google in the browser window.\nYou have 60 seconds.")
             time.sleep(60)
         
-        # ============================================
-        # STEP 4: Navigate to Meet
-        # ============================================
+        # Navigate to Meet
         log(f"📡 Navigating to: {MEET_URL}")
         page.goto(MEET_URL, wait_until='networkidle')
         time.sleep(5)
         
-        # ============================================
-        # STEP 5: Handle Popups
-        # ============================================
+        # Handle Popups
         log("🔄 Handling popups...")
         try:
             page.evaluate("""
@@ -137,9 +127,7 @@ def run_meet_bot():
         except Exception as e:
             log(f"⚠️ Popup error: {e}")
         
-        # ============================================
-        # STEP 6: Turn Off Camera & Mic
-        # ============================================
+        # Turn Off Camera & Mic
         log("🔇 Turning off Camera and Microphone...")
         try:
             page.keyboard.press("Control+d")
@@ -149,9 +137,7 @@ def run_meet_bot():
         except Exception as e:
             log(f"⚠️ Media error: {e}")
         
-        # ============================================
-        # STEP 7: Enter Name
-        # ============================================
+        # Enter Name
         try:
             name_input = page.query_selector('input[type="text"]')
             if name_input:
@@ -161,9 +147,7 @@ def run_meet_bot():
         except Exception as e:
             log(f"⚠️ Name error: {e}")
         
-        # ============================================
-        # STEP 8: Click Join Button
-        # ============================================
+        # Click Join Button
         log("👋 Joining meeting...")
         
         join_selectors = [
@@ -208,9 +192,7 @@ def run_meet_bot():
             context.close()
             return
         
-        # ============================================
-        # STEP 9: Wait & Take Screenshot
-        # ============================================
+        # Wait & Take Screenshot
         log("⏳ Waiting for join confirmation...")
         time.sleep(10)
         
@@ -226,9 +208,7 @@ def run_meet_bot():
         
         log("🎥 Bot is in meeting! Recording in progress...")
         
-        # ============================================
-        # STEP 10: Keep Alive
-        # ============================================
+        # Keep Alive
         try:
             while True:
                 time.sleep(10)
