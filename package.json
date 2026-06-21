@@ -1,10 +1,11 @@
 {
-  "name": "meet-recorder",
-  "version": "1.0.0",
-  "description": "Cloud Meeting Recorder",
+  "name": "meet-recorder-ultimate",
+  "version": "2.0.0",
+  "description": "Ultimate Google Meet Recorder with Anti-Detection",
   "main": "record.js",
   "dependencies": {
-    "puppeteer-core": "^22.0.0",
-    "puppeteer": "^22.0.0"
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "puppeteer-extra-plugin-adblocker": "^2.13.5"
   }
 }
