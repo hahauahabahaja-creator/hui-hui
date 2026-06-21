@@ -23,16 +23,50 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 GITHUB_TOKEN = os.environ.get("PAT_TOKEN")
 REPO_NAME = os.environ.get("GITHUB_REPO") 
 WORKFLOW_NAME = "record.yml" 
-ADMIN_IDS = os.environ.get("ADMIN_IDS", "").split(",")  # Multiple admins support
 
-if not all([BOT_TOKEN, GITHUB_TOKEN, REPO_NAME]):
+# ⭐ IMPORTANT: Set your group ID here
+ALLOWED_GROUP_ID = os.environ.get("ALLOWED_GROUP_ID", "")  # Example: -100123456789
+
+if not all([BOT_TOKEN, GITHUB_TOKEN, REPO_NAME, ALLOWED_GROUP_ID]):
     logger.warning("⚠️ Missing Environment Variables!")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
 # ==========================================
-# 🛠️ SMART HELPER FUNCTIONS
+# 🔒 AUTHORIZATION CHECK
+# ==========================================
+
+def is_authorized(message):
+    """Check if user is authorized to use the bot"""
+    
+    # BLOCK: Private chats
+    if message.chat.type == 'private':
+        bot.reply_to(message, "❌ This bot works ONLY in the authorized group.")
+        return False
+    
+    # BLOCK: Wrong group
+    if str(message.chat.id) != str(ALLOWED_GROUP_ID):
+        bot.reply_to(message, "❌ This bot is not authorized in this group.")
+        return False
+    
+    # CHECK: Is user admin?
+    try:
+        chat_admins = bot.get_chat_administrators(message.chat.id)
+        admin_ids = [admin.user.id for admin in chat_admins]
+        
+        if message.from_user.id not in admin_ids:
+            bot.reply_to(message, "⛔ **Access Denied!**\nOnly group admins can use this bot.", parse_mode="Markdown")
+            return False
+    except Exception as e:
+        logger.error(f"Error checking admin status: {e}")
+        bot.reply_to(message, "⚠️ Error checking permissions. Please try again.")
+        return False
+    
+    return True
+
+# ==========================================
+# 🛠️ HELPER FUNCTIONS
 # ==========================================
 
 def update_github_variable(var_name, value):
@@ -72,7 +106,6 @@ def is_workflow_running():
             data = res.json()
             total = data.get("total_count", 0)
             if total > 0:
-                # Get run details for better info
                 run = data.get("workflow_runs", [{}])[0]
                 run_id = run.get("id", "unknown")
                 started_at = run.get("created_at", "unknown")
@@ -108,11 +141,31 @@ def get_workflow_status():
     return None
 
 # ==========================================
-# 💬 ADVANCED TELEGRAM COMMANDS
+# 🤖 TELEGRAM BOT COMMANDS
 # ==========================================
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
+    # Allow everyone to see help (but still check)
+    if message.chat.type == 'private':
+        bot.reply_to(message, "❌ This bot works ONLY in the authorized group.\nPlease contact group admin.")
+        return
+    
+    if str(message.chat.id) != str(ALLOWED_GROUP_ID):
+        bot.reply_to(message, "❌ This bot is not authorized in this group.")
+        return
+    
+    # Check if admin
+    try:
+        chat_admins = bot.get_chat_administrators(message.chat.id)
+        admin_ids = [admin.user.id for admin in chat_admins]
+        if message.from_user.id not in admin_ids:
+            bot.reply_to(message, "⛔ **Access Denied!**\nOnly group admins can use this bot.", parse_mode="Markdown")
+            return
+    except Exception as e:
+        bot.reply_to(message, "⚠️ Error checking permissions.")
+        return
+    
     user = message.from_user
     welcome_text = (
         "🛡️ **Secure Cloud Recorder**\n"
@@ -132,7 +185,9 @@ def send_welcome(message):
 
 @bot.message_handler(commands=['status'])
 def check_status(message):
-    """Check current recording status"""
+    if not is_authorized(message):
+        return
+    
     status_msg = "🔍 **System Status**\n━━━━━━━━━━━━━━━━━━━━━\n"
     
     if is_workflow_running():
@@ -149,6 +204,9 @@ def check_status(message):
 
 @bot.message_handler(commands=['go'])
 def start_recording(message):
+    if not is_authorized(message):
+        return
+    
     try:
         parts = message.text.split()
         if len(parts) < 2:
@@ -219,7 +277,6 @@ def start_recording(message):
         res = requests.post(url, json=data, headers=headers, timeout=30)
         
         if res.status_code == 204:
-            # Update progress message
             bot.edit_message_text(
                 f"✅ **Recording Started Successfully**\n━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📡 URL: `{meet_url}`\n"
@@ -256,6 +313,9 @@ def start_recording(message):
 
 @bot.message_handler(commands=['off'])
 def stop_recording(message):
+    if not is_authorized(message):
+        return
+    
     if not is_workflow_running():
         bot.reply_to(
             message,
@@ -275,7 +335,6 @@ def stop_recording(message):
     
     update_github_variable("STOP_FLAG", "1")
     
-    # Update message after delay
     time.sleep(5)
     bot.edit_message_text(
         "✅ **Recording Stopped**\n━━━━━━━━━━━━━━━━━━━━━\n"
@@ -288,6 +347,9 @@ def stop_recording(message):
 
 @bot.message_handler(commands=['vew'])
 def live_view(message):
+    if not is_authorized(message):
+        return
+        
     if not is_workflow_running():
         bot.reply_to(
             message,
@@ -307,6 +369,9 @@ def live_view(message):
 
 @bot.message_handler(commands=['full'])
 def full_screen(message):
+    if not is_authorized(message):
+        return
+        
     if not is_workflow_running():
         bot.reply_to(
             message,
@@ -325,7 +390,9 @@ def full_screen(message):
 
 @bot.message_handler(commands=['cancel'])
 def cancel_operation(message):
-    """Emergency cancel command"""
+    if not is_authorized(message):
+        return
+        
     if is_workflow_running():
         bot.reply_to(
             message,
@@ -342,19 +409,8 @@ def cancel_operation(message):
             parse_mode="Markdown"
         )
 
-@bot.message_handler(func=lambda message: True)
-def handle_unknown(message):
-    """Handle unknown commands"""
-    bot.reply_to(
-        message,
-        "❓ **Unknown Command**\n━━━━━━━━━━━━━━━━━━━━━\n"
-        "Use `/help` to see available commands.\n"
-        "📌 Tip: All commands start with `/`",
-        parse_mode="Markdown"
-    )
-
 # ==========================================
-# 🌐 FLASK WEB SERVER WITH MONITORING
+# 🌐 FLASK WEB SERVER
 # ==========================================
 
 @app.route('/')
@@ -377,6 +433,7 @@ def index():
             <div class="online">🟢 System Active</div>
             <div class="detail">Recording Bot Ready</div>
             <div class="detail">📡 Monitor: /status</div>
+            <div class="detail">🔒 Only authorized group</div>
         </div>
     </body>
     </html>
@@ -384,19 +441,18 @@ def index():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint for monitoring"""
     return {
         "status": "online",
         "timestamp": datetime.now().isoformat(),
-        "recording": is_workflow_running()
+        "recording": is_workflow_running(),
+        "authorized_group": ALLOWED_GROUP_ID
     }
 
 # ==========================================
-# 🚀 BOT RUNNER WITH AUTO-RECONNECT
+# 🚀 BOT RUNNER
 # ==========================================
 
 def run_bot():
-    """Run bot with auto-reconnect"""
     while True:
         try:
             logger.info("🤖 Bot started polling...")
@@ -407,11 +463,10 @@ def run_bot():
 
 if __name__ == "__main__":
     logger.info("🚀 Starting Cloud Recorder Bot...")
+    logger.info(f"🔒 Authorized Group ID: {ALLOWED_GROUP_ID}")
     
-    # Start bot thread
     threading.Thread(target=run_bot, daemon=True).start()
     
-    # Run Flask app
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"🌐 Web server running on port {port}")
     app.run(host="0.0.0.0", port=port)
